@@ -14,8 +14,26 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see http://www.gnu.org/licenses/.
- *
- *
  */
-
 package com.wire.android.util
+
+import org.junit.jupiter.api.Test
+
+class StringUtilTest {
+
+    @Test
+    fun givenString_whenToTitleCase_thenReturnsTitleCase() {
+        val input = "tHIS is a teSt"
+        val expected = "This Is A Test"
+        val actual = input.toTitleCase()
+        assert(expected == actual)
+    }
+
+    @Test
+    fun givenStringInLanguageWithNoUpperCase_whenToTitleCase_thenNothingChanges() {
+        val input = "هذا اختبار"
+        val expected = input
+        val actual = input.toTitleCase()
+        assert(expected == actual)
+    }
+}

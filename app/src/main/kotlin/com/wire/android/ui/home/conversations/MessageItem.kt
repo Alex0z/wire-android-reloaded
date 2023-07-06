@@ -54,6 +54,7 @@ import com.wire.android.ui.common.UserBadge
 import com.wire.android.ui.common.UserProfileAvatar
 import com.wire.android.ui.common.colorsScheme
 import com.wire.android.ui.common.dimensions
+import com.wire.android.ui.common.spacers.HorizontalSpace
 import com.wire.android.ui.common.spacers.VerticalSpace
 import com.wire.android.ui.common.typography
 import com.wire.android.ui.home.conversations.info.ConversationDetailsData
@@ -61,7 +62,9 @@ import com.wire.android.ui.home.conversations.messages.QuotedMessage
 import com.wire.android.ui.home.conversations.messages.QuotedMessageStyle
 import com.wire.android.ui.home.conversations.messages.QuotedUnavailable
 import com.wire.android.ui.home.conversations.messages.ReactionPill
+import com.wire.android.ui.home.conversations.model.DeliveryStatusContent
 import com.wire.android.ui.home.conversations.model.MessageBody
+import com.wire.android.ui.home.conversations.model.MessageFlowStatus
 import com.wire.android.ui.home.conversations.model.MessageFooter
 import com.wire.android.ui.home.conversations.model.MessageGenericAsset
 import com.wire.android.ui.home.conversations.model.MessageHeader
@@ -98,11 +101,15 @@ fun MessageItem(
     onOpenProfile: (String) -> Unit,
     onReactionClicked: (String, String) -> Unit,
     onResetSessionClicked: (senderUserId: UserId, clientId: String?) -> Unit,
-    onSelfDeletingMessageRead: (UIMessage.Regular) -> Unit
+    onSelfDeletingMessageRead: (UIMessage.Regular) -> Unit,
+    onFailedMessageRetryClicked: (String) -> Unit = {},
+    onFailedMessageCancelClicked: (String) -> Unit = {}
 ) {
     with(message) {
-        val selfDeletionTimerState = rememberSelfDeletionTimer(expirationStatus)
-        if (selfDeletionTimerState is SelfDeletionTimerHelper.SelfDeletionTimerState.Expirable) {
+        val selfDeletionTimerState = rememberSelfDeletionTimer(header.messageStatus.expirationStatus)
+        if (
+            selfDeletionTimerState is SelfDeletionTimerHelper.SelfDeletionTimerState.Expirable
+        ) {
             startDeletionTimer(
                 message = message,
                 expirableTimer = selfDeletionTimerState,
@@ -110,7 +117,7 @@ fun MessageItem(
             )
         }
 
-        val backgroundColorModifier = if (message.sendingFailed || message.receivingFailed) {
+        val backgroundColorModifier = if (message.sendingFailed || message.decryptionFailed) {
             Modifier.background(colorsScheme().messageErrorBackgroundColor)
         } else if (selfDeletionTimerState is SelfDeletionTimerHelper.SelfDeletionTimerState.Expirable && !message.isDeleted) {
             val color by animateColorAsState(
@@ -140,7 +147,7 @@ fun MessageItem(
                         onLongClick = remember(message) { { onLongClicked(message) } }
                     )
                     .padding(
-                        end = dimensions().spacing16x,
+                        end = dimensions().spacing12x,
                         top = halfItemBottomPadding - fullAvatarOuterPadding,
                         bottom = halfItemBottomPadding
                     )
@@ -149,7 +156,7 @@ fun MessageItem(
 
                 val isProfileRedirectEnabled =
                     header.userId != null &&
-                            !(header.isSenderDeleted || header.isSenderUnavailable)
+                        !(header.isSenderDeleted || header.isSenderUnavailable)
 
                 if (showAuthor) {
                     val avatarClickable = remember {
@@ -177,14 +184,14 @@ fun MessageItem(
                         // the deletion responsibility belongs to the receiver, therefore we need to wait for the receiver
                         // timer to expire to permanently delete the message, in the meantime we show the EphemeralMessageExpiredLabel
                         if (isDeleted) {
-                            EphemeralMessageExpiredLabel(conversationDetailsData)
+                            EphemeralMessageExpiredLabel(message.isMyMessage, conversationDetailsData)
                         }
                     } else {
                         MessageStatusLabel(messageStatus = message.header.messageStatus)
                     }
                     if (!isDeleted) {
                         if (!decryptionFailed) {
-                            val currentOnAssetClicked = remember {
+                            val currentOnAssetClicked = remember(message) {
                                 Clickable(enabled = isAvailable, onClick = {
                                     onAssetMessageClicked(header.messageId)
                                 }, onLongClick = {
@@ -192,7 +199,7 @@ fun MessageItem(
                                 })
                             }
 
-                            val currentOnImageClick = remember {
+                            val currentOnImageClick = remember(message) {
                                 Clickable(enabled = isAvailable, onClick = {
                                     onImageMessageClicked(
                                         message,
@@ -203,19 +210,38 @@ fun MessageItem(
                                 })
                             }
                             val onLongClick: (() -> Unit)? = remember(message) {
-                                if (isAvailable) { { onLongClicked(message) } } else null
+                                if (isAvailable) {
+                                    { onLongClicked(message) }
+                                } else {
+                                    null
+                                }
                             }
-                            MessageContent(
-                                message = message,
-                                messageContent = messageContent,
-                                audioMessagesState = audioMessagesState,
-                                onAudioClick = onAudioClick,
-                                onChangeAudioPosition = onChangeAudioPosition,
-                                onAssetClick = currentOnAssetClicked,
-                                onImageClick = currentOnImageClick,
-                                onLongClick = onLongClick,
-                                onOpenProfile = onOpenProfile
-                            )
+                            Row {
+                                Box(modifier = Modifier.weight(1F)) {
+                                    MessageContent(
+                                        message = message,
+                                        messageContent = messageContent,
+                                        audioMessagesState = audioMessagesState,
+                                        onAudioClick = onAudioClick,
+                                        onChangeAudioPosition = onChangeAudioPosition,
+                                        onAssetClick = currentOnAssetClicked,
+                                        onImageClick = currentOnImageClick,
+                                        onLongClick = onLongClick,
+                                        onOpenProfile = onOpenProfile
+                                    )
+                                }
+                                if (isMyMessage) {
+                                    MessageStatusIndicator(
+                                        message.header.messageStatus.flowStatus,
+                                        Modifier.padding(
+                                            top = if (message.isTextContentWithoutQuote) dimensions().spacing2x else dimensions().spacing4x,
+                                            start = dimensions().spacing8x
+                                        )
+                                    )
+                                } else {
+                                    HorizontalSpace.x24()
+                                }
+                            }
                             MessageFooter(
                                 messageFooter,
                                 onReactionClicked
@@ -223,14 +249,17 @@ fun MessageItem(
                         } else {
                             MessageDecryptionFailure(
                                 messageHeader = header,
-                                decryptionStatus = header.messageStatus as MessageStatus.DecryptionFailure,
+                                decryptionStatus = header.messageStatus.flowStatus as MessageFlowStatus.Failure.Decryption,
                                 onResetSessionClicked = onResetSessionClicked
                             )
                         }
-                    }
-
-                    if (message.sendingFailed) {
-                        MessageSendFailureWarning(header.messageStatus as MessageStatus.MessageSendFailureStatus)
+                        if (message.sendingFailed) {
+                            MessageSendFailureWarning(
+                                messageStatus = header.messageStatus.flowStatus as MessageFlowStatus.Failure.Send,
+                                onRetryClick = remember { { onFailedMessageRetryClicked(header.messageId) } },
+                                onCancelClick = remember { { onFailedMessageCancelClicked(header.messageId) } }
+                            )
+                        }
                     }
                 }
             }
@@ -239,8 +268,11 @@ fun MessageItem(
 }
 
 @Composable
-fun EphemeralMessageExpiredLabel(conversationDetailsData: ConversationDetailsData) {
-    val stringResource = if (conversationDetailsData is ConversationDetailsData.OneOne) {
+fun EphemeralMessageExpiredLabel(isSelfMessage: Boolean, conversationDetailsData: ConversationDetailsData) {
+
+    val stringResource = if (!isSelfMessage) {
+        stringResource(id = R.string.label_information_waiting_for_deleation_when_self_not_sender)
+    } else if (conversationDetailsData is ConversationDetailsData.OneOne) {
         conversationDetailsData.otherUserName?.let {
             stringResource(
                 R.string.label_information_waiting_for_recipient_timer_to_expire_one_to_one,
@@ -266,33 +298,40 @@ fun MessageExpireLabel(messageContent: UIMessageContent?, timeLeft: String) {
 
         is UIMessageContent.AssetMessage -> {
             StatusBox(
-                statusText = if (messageContent.downloadStatus == Message.DownloadStatus.SAVED_INTERNALLY
-                    || messageContent.downloadStatus == Message.DownloadStatus.SAVED_EXTERNALLY
-                ) stringResource(
-                    R.string.self_deleting_message_time_left,
-                    timeLeft
-                )
-                else stringResource(R.string.self_deleting_message_label, timeLeft)
+                statusText = if (messageContent.downloadStatus.isSaved()) {
+                    stringResource(
+                        R.string.self_deleting_message_time_left,
+                        timeLeft
+                    )
+                } else {
+                    stringResource(R.string.self_deleting_message_label, timeLeft)
+                }
             )
         }
 
         is UIMessageContent.AudioAssetMessage -> {
             StatusBox(
-                statusText = if (messageContent.downloadStatus == Message.DownloadStatus.SAVED_INTERNALLY) stringResource(
-                    R.string.self_deleting_message_time_left,
-                    timeLeft
-                )
-                else stringResource(R.string.self_deleting_message_label, timeLeft)
+                statusText = if (messageContent.downloadStatus.isSaved()) {
+                    stringResource(
+                        R.string.self_deleting_message_time_left,
+                        timeLeft
+                    )
+                } else {
+                    stringResource(R.string.self_deleting_message_label, timeLeft)
+                }
             )
         }
 
         is UIMessageContent.ImageMessage -> {
             StatusBox(
-                statusText = if (messageContent.downloadStatus == Message.DownloadStatus.SAVED_INTERNALLY) stringResource(
-                    R.string.self_deleting_message_time_left,
-                    timeLeft
-                )
-                else stringResource(R.string.self_deleting_message_label, timeLeft)
+                statusText = if (messageContent.downloadStatus.isSaved()) {
+                    stringResource(
+                        R.string.self_deleting_message_time_left,
+                        timeLeft
+                    )
+                } else {
+                    stringResource(R.string.self_deleting_message_label, timeLeft)
+                }
             )
         }
 
@@ -351,7 +390,7 @@ private fun MessageFooter(
         FlowRow(
             mainAxisSpacing = dimensions().spacing4x,
             crossAxisSpacing = dimensions().spacing6x,
-            modifier = Modifier.padding(vertical = dimensions().spacing4x)
+            modifier = Modifier.padding(top = dimensions().spacing4x)
         ) {
             messageFooter.reactions.entries
                 .sortedBy { it.key }
@@ -398,7 +437,7 @@ private fun Username(username: String, modifier: Modifier = Modifier) {
 @Suppress("ComplexMethod")
 @Composable
 private fun MessageContent(
-    message: UIMessage,
+    message: UIMessage.Regular,
     messageContent: UIMessageContent.Regular?,
     audioMessagesState: Map<String, AudioState>,
     onAssetClick: Clickable,
@@ -409,38 +448,48 @@ private fun MessageContent(
     onOpenProfile: (String) -> Unit
 ) {
     when (messageContent) {
-        is UIMessageContent.ImageMessage -> MessageImage(
-            asset = messageContent.asset,
-            imgParams = ImageMessageParams(messageContent.width, messageContent.height),
-            uploadStatus = messageContent.uploadStatus,
-            downloadStatus = messageContent.downloadStatus,
-            onImageClick = onImageClick
-        )
-
-        is UIMessageContent.TextMessage -> {
-            messageContent.messageBody.quotedMessage?.let {
-                VerticalSpace.x4()
-                when (it) {
-                    is UIQuotedMessage.UIQuotedData -> QuotedMessage(it)
-                    UIQuotedMessage.UnavailableData -> QuotedUnavailable(QuotedMessageStyle.COMPLETE)
-                }
-                VerticalSpace.x4()
-            }
-            MessageBody(
-                messageBody = messageContent.messageBody,
-                onLongClick = onLongClick,
-                onOpenProfile = onOpenProfile
+        is UIMessageContent.ImageMessage -> {
+            MessageImage(
+                asset = messageContent.asset,
+                imgParams = ImageMessageParams(messageContent.width, messageContent.height),
+                uploadStatus = messageContent.uploadStatus,
+                downloadStatus = messageContent.downloadStatus,
+                onImageClick = onImageClick
             )
+            PartialDeliveryInformation(messageContent.deliveryStatus)
         }
 
-        is UIMessageContent.AssetMessage -> MessageGenericAsset(
-            assetName = messageContent.assetName,
-            assetExtension = messageContent.assetExtension,
-            assetSizeInBytes = messageContent.assetSizeInBytes,
-            assetUploadStatus = messageContent.uploadStatus,
-            assetDownloadStatus = messageContent.downloadStatus,
-            onAssetClick = onAssetClick
-        )
+        is UIMessageContent.TextMessage -> {
+            Column {
+                messageContent.messageBody.quotedMessage?.let {
+                    VerticalSpace.x4()
+                    when (it) {
+                        is UIQuotedMessage.UIQuotedData -> QuotedMessage(it)
+                        UIQuotedMessage.UnavailableData -> QuotedUnavailable(QuotedMessageStyle.COMPLETE)
+                    }
+                    VerticalSpace.x4()
+                }
+                MessageBody(
+                    messageBody = messageContent.messageBody,
+                    isAvailable = !message.isPending && message.isAvailable,
+                    onLongClick = onLongClick,
+                    onOpenProfile = onOpenProfile
+                )
+                PartialDeliveryInformation(messageContent.deliveryStatus)
+            }
+        }
+
+        is UIMessageContent.AssetMessage -> {
+            MessageGenericAsset(
+                assetName = messageContent.assetName,
+                assetExtension = messageContent.assetExtension,
+                assetSizeInBytes = messageContent.assetSizeInBytes,
+                assetUploadStatus = messageContent.uploadStatus,
+                assetDownloadStatus = messageContent.downloadStatus,
+                onAssetClick = onAssetClick
+            )
+            PartialDeliveryInformation(messageContent.deliveryStatus)
+        }
 
         is UIMessageContent.RestrictedAsset -> {
             when {
@@ -466,6 +515,7 @@ private fun MessageContent(
                     RestrictedGenericFileMessage(messageContent.assetName, messageContent.assetSizeInBytes)
                 }
             }
+            PartialDeliveryInformation(messageContent.deliveryStatus)
         }
 
         is UIMessageContent.AudioAssetMessage -> {
@@ -496,8 +546,25 @@ private fun MessageContent(
 }
 
 @Composable
+private fun PartialDeliveryInformation(deliveryStatus: DeliveryStatusContent) {
+    (deliveryStatus as? DeliveryStatusContent.PartialDelivery)?.let { partialDelivery ->
+        if (partialDelivery.hasFailures) {
+            VerticalSpace.x4()
+            MessageSentPartialDeliveryFailures(partialDelivery)
+        }
+    }
+}
+
+@Composable
 private fun MessageStatusLabel(messageStatus: MessageStatus) {
     messageStatus.badgeText?.let {
         StatusBox(it.asString())
     }
 }
+
+private fun Message.DownloadStatus.isSaved(): Boolean {
+    return this == Message.DownloadStatus.SAVED_EXTERNALLY || this == Message.DownloadStatus.SAVED_INTERNALLY
+}
+
+internal val DeliveryStatusContent.expandable
+    get() = this is DeliveryStatusContent.PartialDelivery && !this.isSingleUserFailure

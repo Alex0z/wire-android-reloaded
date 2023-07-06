@@ -76,6 +76,7 @@ fun SettingsScreenContent(
                 items = buildList {
                     add(SettingsItem.YourAccount)
                     add(SettingsItem.PrivacySettings)
+                    add(SettingsItem.Licenses)
                     add(SettingsItem.ManageDevices)
                     if (BackUpSettings) {
                         add(SettingsItem.BackupAndRestore)
@@ -119,7 +120,7 @@ private fun LazyListScope.folderWithElements(
         items = items.associateBy { it.id }
     ) { settingsItem ->
         SettingsItem(
-            title = settingsItem.title.asString(),
+            text = settingsItem.title.asString(),
             onRowPressed = remember { Clickable(enabled = true) { onItemClicked(settingsItem) } }
         )
     }

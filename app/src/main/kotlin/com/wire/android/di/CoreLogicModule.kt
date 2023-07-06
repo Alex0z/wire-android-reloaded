@@ -69,6 +69,7 @@ import com.wire.kalium.logic.feature.conversation.GetOtherUserSecurityClassifica
 import com.wire.kalium.logic.feature.conversation.LeaveConversationUseCase
 import com.wire.kalium.logic.feature.conversation.ObserveSecurityClassificationLabelUseCase
 import com.wire.kalium.logic.feature.conversation.ObserveUserListByIdUseCase
+import com.wire.kalium.logic.feature.conversation.RefreshConversationsWithoutMetadataUseCase
 import com.wire.kalium.logic.feature.conversation.RemoveMemberFromConversationUseCase
 import com.wire.kalium.logic.feature.conversation.UpdateConversationAccessRoleUseCase
 import com.wire.kalium.logic.feature.conversation.UpdateConversationMemberRoleUseCase
@@ -83,6 +84,7 @@ import com.wire.kalium.logic.feature.message.GetMessageByIdUseCase
 import com.wire.kalium.logic.feature.message.GetNotificationsUseCase
 import com.wire.kalium.logic.feature.message.ObserveMessageReactionsUseCase
 import com.wire.kalium.logic.feature.message.ObserveMessageReceiptsUseCase
+import com.wire.kalium.logic.feature.message.RetryFailedMessageUseCase
 import com.wire.kalium.logic.feature.message.SendEditTextMessageUseCase
 import com.wire.kalium.logic.feature.message.SendKnockUseCase
 import com.wire.kalium.logic.feature.message.SendTextMessageUseCase
@@ -91,11 +93,12 @@ import com.wire.kalium.logic.feature.message.ephemeral.EnqueueMessageSelfDeletio
 import com.wire.kalium.logic.feature.message.getPaginatedFlowOfMessagesByConversation
 import com.wire.kalium.logic.feature.publicuser.GetAllContactsUseCase
 import com.wire.kalium.logic.feature.publicuser.GetKnownUserUseCase
+import com.wire.kalium.logic.feature.publicuser.RefreshUsersWithoutMetadataUseCase
 import com.wire.kalium.logic.feature.publicuser.search.SearchKnownUsersUseCase
 import com.wire.kalium.logic.feature.publicuser.search.SearchPublicUsersUseCase
-import com.wire.kalium.logic.feature.selfdeletingMessages.ObserveSelfDeletionTimerSettingsForConversationUseCase
-import com.wire.kalium.logic.feature.selfdeletingMessages.ObserveTeamSettingsSelfDeletingStatusUseCase
-import com.wire.kalium.logic.feature.selfdeletingMessages.PersistNewSelfDeletionTimerUseCase
+import com.wire.kalium.logic.feature.selfDeletingMessages.ObserveSelfDeletionTimerSettingsForConversationUseCase
+import com.wire.kalium.logic.feature.selfDeletingMessages.ObserveTeamSettingsSelfDeletingStatusUseCase
+import com.wire.kalium.logic.feature.selfDeletingMessages.PersistNewSelfDeletionTimerUseCase
 import com.wire.kalium.logic.feature.server.ServerConfigForAccountUseCase
 import com.wire.kalium.logic.feature.service.GetServiceByIdUseCase
 import com.wire.kalium.logic.feature.service.ObserveAllServicesUseCase
@@ -106,6 +109,7 @@ import com.wire.kalium.logic.feature.session.GetSessionsUseCase
 import com.wire.kalium.logic.feature.session.UpdateCurrentSessionUseCase
 import com.wire.kalium.logic.feature.sessionreset.ResetSessionUseCase
 import com.wire.kalium.logic.feature.team.GetSelfTeamUseCase
+import com.wire.kalium.logic.feature.user.DeleteAccountUseCase
 import com.wire.kalium.logic.feature.user.GetSelfUserUseCase
 import com.wire.kalium.logic.feature.user.GetUserInfoUseCase
 import com.wire.kalium.logic.feature.user.IsPasswordRequiredUseCase
@@ -481,6 +485,13 @@ class UseCaseModule {
         @KaliumCoreLogic coreLogic: CoreLogic,
         @CurrentAccount currentAccount: UserId
     ): SendEditTextMessageUseCase = coreLogic.getSessionScope(currentAccount).messages.sendEditTextMessage
+
+    @ViewModelScoped
+    @Provides
+    fun provideRetryFailedMessageUseCase(
+        @KaliumCoreLogic coreLogic: CoreLogic,
+        @CurrentAccount currentAccount: UserId
+    ): RetryFailedMessageUseCase = coreLogic.getSessionScope(currentAccount).messages.retryFailedMessage
 
     @ViewModelScoped
     @Provides
@@ -1108,6 +1119,11 @@ class UseCaseModule {
 
     @ViewModelScoped
     @Provides
+    fun provideClearNewClientsForUser(@KaliumCoreLogic coreLogic: CoreLogic) =
+        coreLogic.getGlobalScope().clearNewClientsForUser
+
+    @ViewModelScoped
+    @Provides
     fun provideEnqueueMessageSelfDeletionUseCase(
         @KaliumCoreLogic coreLogic: CoreLogic,
         @CurrentAccount currentAccount: UserId
@@ -1160,4 +1176,27 @@ class UseCaseModule {
         @CurrentAccount currentAccount: UserId
     ): GetServiceByIdUseCase =
         coreLogic.getSessionScope(currentAccount).service.getServiceById
+
+    @ViewModelScoped
+    @Provides
+    fun provideRefreshUsersWithoutMetadataUseCase(
+        @KaliumCoreLogic coreLogic: CoreLogic,
+        @CurrentAccount currentAccount: UserId
+    ): RefreshUsersWithoutMetadataUseCase = coreLogic.getSessionScope(currentAccount).users.refreshUsersWithoutMetadata
+
+    @ViewModelScoped
+    @Provides
+    fun provideRefreshConversationsWithoutMetadataUseCase(
+        @KaliumCoreLogic coreLogic: CoreLogic,
+        @CurrentAccount currentAccount: UserId
+    ): RefreshConversationsWithoutMetadataUseCase =
+        coreLogic.getSessionScope(currentAccount).conversations.refreshConversationsWithoutMetadata
+
+    @ViewModelScoped
+    @Provides
+    fun provideDeleteAccountUseCase(
+        @KaliumCoreLogic coreLogic: CoreLogic,
+        @CurrentAccount currentAccount: UserId
+    ): DeleteAccountUseCase =
+        coreLogic.getSessionScope(currentAccount).users.deleteAccount
 }

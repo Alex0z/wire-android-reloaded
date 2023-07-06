@@ -29,13 +29,15 @@ import com.wire.android.appLogger
 import com.wire.android.di.KaliumCoreLogic
 import com.wire.android.ui.home.FeatureFlagState
 import com.wire.android.ui.home.conversations.selfdeletion.SelfDeletionMapper.toSelfDeletionDuration
+import com.wire.android.ui.home.messagecomposer.state.SelfDeletionDuration
 import com.wire.kalium.logic.CoreLogic
 import com.wire.kalium.logic.configuration.FileSharingStatus
 import com.wire.kalium.logic.data.sync.SyncState
 import com.wire.kalium.logic.data.user.UserId
-import com.wire.kalium.logic.feature.selfdeletingMessages.SelfDeletionTimer
+import com.wire.kalium.logic.feature.selfDeletingMessages.TeamSelfDeleteTimer
 import com.wire.kalium.logic.feature.session.CurrentSessionResult
 import com.wire.kalium.logic.feature.session.CurrentSessionUseCase
+import com.wire.kalium.logic.feature.user.E2EIRequiredResult
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
@@ -81,6 +83,7 @@ class FeatureFlagNotificationViewModel @Inject constructor(
                             setFileSharingState(userId)
                             observeTeamSettingsSelfDeletionStatus(userId)
                             setGuestRoomLinkFeatureFlag(userId)
+                            setE2EIRequiredState(userId)
                         }
                 }
             }
@@ -124,12 +127,35 @@ class FeatureFlagNotificationViewModel @Inject constructor(
     private fun observeTeamSettingsSelfDeletionStatus(userId: UserId) {
         viewModelScope.launch {
             coreLogic.getSessionScope(userId).observeTeamSettingsSelfDeletionStatus().collect { teamSettingsSelfDeletingStatus ->
+                val areSelfDeletedMessagesEnabled =
+                    teamSettingsSelfDeletingStatus.enforcedSelfDeletionTimer !is TeamSelfDeleteTimer.Disabled
+                val shouldShowSelfDeletingMessagesDialog =
+                    teamSettingsSelfDeletingStatus.hasFeatureChanged ?: false
+                val enforcedTimeoutDuration: SelfDeletionDuration =
+                    with(teamSettingsSelfDeletingStatus.enforcedSelfDeletionTimer) {
+                        when (this) {
+                            TeamSelfDeleteTimer.Disabled,
+                            TeamSelfDeleteTimer.Enabled -> SelfDeletionDuration.None
+
+                            is TeamSelfDeleteTimer.Enforced -> this.enforcedDuration.toSelfDeletionDuration()
+                        }
+                    }
                 featureFlagState = featureFlagState.copy(
-                    areSelfDeletedMessagesEnabled = teamSettingsSelfDeletingStatus.enforcedSelfDeletionTimer !is SelfDeletionTimer.Disabled,
-                    shouldShowSelfDeletingMessagesDialog = teamSettingsSelfDeletingStatus.hasFeatureChanged ?: false,
-                    enforcedTimeoutDuration = teamSettingsSelfDeletingStatus.enforcedSelfDeletionTimer.toDuration().toSelfDeletionDuration()
+                    areSelfDeletedMessagesEnabled = areSelfDeletedMessagesEnabled,
+                    shouldShowSelfDeletingMessagesDialog = shouldShowSelfDeletingMessagesDialog,
+                    enforcedTimeoutDuration = enforcedTimeoutDuration
                 )
             }
+        }
+    }
+
+    private fun setE2EIRequiredState(userId: UserId) = viewModelScope.launch {
+        coreLogic.getSessionScope(userId).observeE2EIRequired().collect { result ->
+            val state = when (result) {
+                is E2EIRequiredResult.WithGracePeriod -> FeatureFlagState.E2EIRequired.WithGracePeriod(result.gracePeriod)
+                E2EIRequiredResult.NoGracePeriod -> FeatureFlagState.E2EIRequired.NoGracePeriod
+            }
+            featureFlagState = featureFlagState.copy(e2EIRequired = state)
         }
     }
 
@@ -152,5 +178,26 @@ class FeatureFlagNotificationViewModel @Inject constructor(
             currentUserId?.let { coreLogic.getSessionScope(it).markGuestLinkFeatureFlagAsNotChanged() }
         }
         featureFlagState = featureFlagState.copy(shouldShowGuestRoomLinkDialog = false)
+    }
+
+    fun getE2EICertificate() {
+        // TODO do the magic
+        featureFlagState = featureFlagState.copy(e2EIRequired = null)
+    }
+
+    fun snoozeE2EIdRequiredDialog(result: FeatureFlagState.E2EIRequired.WithGracePeriod) {
+        featureFlagState = featureFlagState.copy(
+            e2EIRequired = null,
+            e2EISnoozeInfo = FeatureFlagState.E2EISnooze(result.timeLeft)
+        )
+        currentUserId?.let { userId ->
+            viewModelScope.launch {
+                coreLogic.getSessionScope(userId).markE2EIRequiredAsNotified()
+            }
+        }
+    }
+
+    fun dismissSnoozeE2EIdRequiredDialog() {
+        featureFlagState = featureFlagState.copy(e2EISnoozeInfo = null)
     }
 }

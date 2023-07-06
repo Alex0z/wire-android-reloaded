@@ -49,8 +49,9 @@ import com.wire.kalium.logic.feature.conversation.RemoveMemberFromConversationUs
 import com.wire.kalium.logic.feature.conversation.UpdateConversationAccessRoleUseCase
 import com.wire.kalium.logic.feature.conversation.UpdateConversationMutedStatusUseCase
 import com.wire.kalium.logic.feature.conversation.UpdateConversationReceiptModeUseCase
-import com.wire.kalium.logic.feature.selfdeletingMessages.ObserveSelfDeletionTimerSettingsForConversationUseCase
-import com.wire.kalium.logic.feature.selfdeletingMessages.SelfDeletionTimer
+import com.wire.kalium.logic.feature.publicuser.RefreshUsersWithoutMetadataUseCase
+import com.wire.kalium.logic.feature.selfDeletingMessages.ObserveSelfDeletionTimerSettingsForConversationUseCase
+import com.wire.kalium.logic.feature.selfDeletingMessages.SelfDeletionTimer
 import com.wire.kalium.logic.feature.team.DeleteTeamConversationUseCase
 import com.wire.kalium.logic.feature.team.GetSelfTeamUseCase
 import com.wire.kalium.logic.feature.user.GetSelfUserUseCase
@@ -487,7 +488,8 @@ class GroupConversationDetailsViewModelTest {
                 lastReadDate = "2022-04-04T16:11:28.388Z",
                 creatorId = null,
                 receiptMode = Conversation.ReceiptMode.ENABLED,
-                messageTimer = null
+                messageTimer = null,
+                userMessageTimer = null
             ),
             legalHoldStatus = LegalHoldStatus.DISABLED,
             hasOngoingCall = false,
@@ -551,6 +553,9 @@ internal class GroupConversationDetailsViewModelArrangement {
 
     private val observeParticipantsForConversationChannel = Channel<ConversationParticipantsData>(capacity = Channel.UNLIMITED)
 
+    @MockK
+    private lateinit var refreshUsersWithoutMetadata: RefreshUsersWithoutMetadataUseCase
+
     private val viewModel by lazy {
         GroupConversationDetailsViewModel(
             navigationManager = navigationManager,
@@ -568,7 +573,8 @@ internal class GroupConversationDetailsViewModelArrangement {
             clearConversationContent = clearConversationContentUseCase,
             updateConversationReceiptMode = updateConversationReceiptMode,
             isMLSEnabled = isMLSEnabledUseCase,
-            observeSelfDeletionTimerSettingsForConversation = observeSelfDeletionTimerSettingsForConversation
+            observeSelfDeletionTimerSettingsForConversation = observeSelfDeletionTimerSettingsForConversation,
+            refreshUsersWithoutMetadata = refreshUsersWithoutMetadata,
         )
     }
 
